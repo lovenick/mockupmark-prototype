@@ -1,0 +1,11 @@
+{
+  "name": "mockupmark",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "private": true,
+  "dependencies": {
+    "gm": "^1.23.1",
+    "tempy": "^0.3.0"
+  }
+}
