@@ -6,16 +6,22 @@ const tempy = require("tempy");
 async function generateNormalizedTemplateMap(params) {
   const { template, mask, out } = params;
 
-  const tmp = tempy.file({ extension: "png" });
+  const tmp = tempy.file({ extension: "mpc" });
 
   const applyMask = `convert ${template} ${mask} -alpha off -colorspace gray -compose CopyOpacity -composite ${tmp}`;
   await exec(applyMask);
 
-  const { stdout: brightnessDelta } = await exec(
-    `convert ${tmp} -format "%[fx:100*mean-50]" info:`
+  const { stdout: brightness } = await exec(
+    `convert ${tmp} -background grey50 -alpha remove -format "%[fx:mean]" info:`
   );
 
-  const adjustBrightness = `convert ${tmp} -evaluate subtract ${brightnessDelta}% ${out}`;
+  const { stdout: opacityAmount } = await exec(
+    `convert ${mask} -format "%[fx:mean]" info:`
+  );
+
+  const brightnessDelta = (100 * (brightness - 0.5)) / opacityAmount;
+
+  const adjustBrightness = `convert ${tmp} -evaluate subtract ${brightnessDelta}% -background grey50 -alpha remove -alpha off ${out}`;
   await exec(adjustBrightness);
 }
 
@@ -27,10 +33,21 @@ async function generateDisplacementMap(params) {
   const { template, mask, out } = params;
   const { blur = 10 } = params;
 
-  const tmp = tempy.file({ extension: "png" });
+  const tmp = tempy.file({ extension: "mpc" });
   await generateNormalizedTemplateMap({ template, mask, out: tmp });
 
   await exec(`convert ${tmp} -blur 0x${blur} ${out}`);
+}
+
+async function resize(params) {
+  const { artwork, out } = params;
+  const { size = 400 } = params;
+  await exec(`convert ${artwork} -scale ${size} ${out}`);
+}
+
+async function addBorder(params) {
+  const { artwork, out } = params;
+  await exec(`convert ${artwork} -bordercolor transparent -border 1 ${out}`);
 }
 
 // convert template.jpg -alpha transparent \( artwork.png +distort perspective "0,0,940,2650,0,2000,940,3460,2000,2000,1740,3540,2000,0,1740,2800" \) -background transparent -layers merge +repage artwork_distorted.png
@@ -67,7 +84,7 @@ async function addHighlights(params) {
 
 async function composeArtwork(params) {
   const { template, artwork, mask, out } = params;
-  const compose = `convert ${template} ${artwork} ${mask} -compose multiply -composite ${out}`;
+  const compose = `convert ${template} ${artwork} ${mask} -compose over -composite ${out}`;
   await exec(compose);
 }
 
@@ -76,8 +93,11 @@ async function generateMockup(params) {
   const { template, artwork, mask, displacementMap, lightingMap, out } = params;
   const { coordinates } = params;
 
-  const tmp = tempy.file({ extension: "png" });
-  await perspectiveTransform({ template, artwork, coordinates, out: tmp });
+  const tmp = tempy.file({ extension: "mpc" });
+  await resize({ artwork, out: tmp });
+  await addBorder({ artwork: tmp, out: tmp });
+
+  await perspectiveTransform({ template, artwork: tmp, coordinates, out: tmp });
   await addDisplacement({ artwork: tmp, displacementMap, out: tmp });
   await addHighlights({ artwork: tmp, lightingMap, out: tmp });
   await composeArtwork({ artwork: tmp, template, mask, out });
