@@ -26,7 +26,22 @@ async function generateNormalizedTemplateMap(params) {
 }
 
 async function generateLightingMap(params) {
-  await generateNormalizedTemplateMap(params);
+  const { template, mask, out } = params;
+
+  const tmp = tempy.file({ extension: "mpc" });
+  await generateNormalizedTemplateMap({ template, mask, out: tmp });
+
+  // await exec(`convert \\( ${tmp} -level 50%,100% \\) +level 0%,50% ${out}`);
+
+  const removeShadows = `convert ${tmp} \\( -clone 0 -fill grey50 -colorize 100 \\) -compose lighten -composite ${out}`;
+  await exec(removeShadows);
+}
+
+async function generateColorAdjustmentMap(params) {
+  const { template, mask, out, color = "white" } = params;
+
+  const adjustColor = `convert ${template} \\( -clone 0 -fill "${color}" -colorize 100 \\) ${mask} -compose DivideSrc -composite ${out}`;
+  await exec(adjustColor);
 }
 
 async function generateDisplacementMap(params) {
@@ -73,6 +88,13 @@ async function addDisplacement(params) {
   await exec(displace);
 }
 
+async function adjustColors(params) {
+  const { artwork, adjustmentMap, out } = params;
+
+  const adjust = `convert ${artwork} \\( -clone 0 ${adjustmentMap} -compose multiply -composite \\) +swap -compose CopyOpacity -composite ${out}`;
+  await exec(adjust);
+}
+
 // convert artwork_displaced.png \( -clone 0 masked_template_corrected.png -compose hardlight -composite \) +swap -compose copy_opacity -composite artwork_final.png
 async function addHighlights(params) {
   const { artwork, lightingMap, out } = params;
@@ -90,7 +112,15 @@ async function composeArtwork(params) {
 
 // convert template.jpg -compose multiply artwork_final.png -composite mockup.jpg
 async function generateMockup(params) {
-  const { template, artwork, mask, displacementMap, lightingMap, out } = params;
+  const {
+    template,
+    artwork,
+    mask,
+    displacementMap,
+    lightingMap,
+    adjustmentMap,
+    out
+  } = params;
   const { coordinates } = params;
 
   const tmp = tempy.file({ extension: "mpc" });
@@ -100,28 +130,57 @@ async function generateMockup(params) {
   await perspectiveTransform({ template, artwork: tmp, coordinates, out: tmp });
   await addDisplacement({ artwork: tmp, displacementMap, out: tmp });
   await addHighlights({ artwork: tmp, lightingMap, out: tmp });
+  await adjustColors({ artwork: tmp, adjustmentMap, out: tmp });
   await composeArtwork({ artwork: tmp, template, mask, out });
 }
 
 Promise.all([
   generateDisplacementMap({
-    template: "template.jpg",
-    mask: "mask.png",
-    out: "displace.png"
+    template: "templates/22-template.jpg",
+    mask: "templates/22-mask.png",
+    out: "templates/22-displace.png"
   }),
   generateLightingMap({
-    template: "template.jpg",
-    mask: "mask.png",
-    out: "lighting.png"
+    template: "templates/22-template.jpg",
+    mask: "templates/22-mask.png",
+    out: "templates/22-lighting.png"
+  }),
+  generateColorAdjustmentMap({
+    template: "templates/22-template.jpg",
+    color: "white",
+    mask: "templates/22-mask.png",
+    out: "templates/22-adjust.png"
   })
 ]).then(() => {
   generateMockup({
-    template: "template.jpg",
-    artwork: "artwork.png",
-    mask: "mask.png",
-    displacementMap: "displace.png",
-    lightingMap: "lighting.png",
-    coordinates: [940, 2650, 940, 3460, 1740, 3540, 1740, 2800],
-    out: "mockup.jpg"
+    template: "templates/22-template.jpg",
+    artwork: "maruchan.png",
+    mask: "templates/22-mask.png",
+    displacementMap: "templates/22-displace.png",
+    lightingMap: "templates/22-lighting.png",
+    adjustmentMap: "templates/22-adjust.png",
+    coordinates: [520, 772, 626, 1152, 926, 1140, 848, 722],
+    out: "22-mockup.jpg"
   });
 });
+
+// [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 16, 17, 18, 19, 20, 21, 22, 23].forEach(
+//   index => {
+//     generateDisplacementMap({
+//       template: `templates/${index}-template.jpg`,
+//       mask: `templates/${index}-mask.png`,
+//       out: `templates/${index}-displace.png`
+//     }),
+//     generateLightingMap({
+//       template: `templates/${index}-template.jpg`,
+//       mask: `templates/${index}-mask.png`,
+//       out: `templates/${index}-lighting.png`
+//     });
+//     generateColorAdjustmentMap({
+//       template: `templates/${index}-template.jpg`,
+//       mask: `templates/${index}-mask.png`,
+//       color: "#f1f1f1", // change this color for template 16 and 17
+//       out: `templates/${index}-adjust.jpg`
+//     });
+//   }
+// );
